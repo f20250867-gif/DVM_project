@@ -1,6 +1,8 @@
 from django.urls import path
 from .views import RegisterView, LoginView, MeView
 from .views import NodeView, EdgeView, TripView
+from rest_framework.views import APIView
+from .views import RouteView
 
 
 urlpatterns = [
@@ -10,6 +12,7 @@ urlpatterns = [
     path('nodes/', NodeView.as_view()),
     path('edges/', EdgeView.as_view()), 
     path('trips/', TripView.as_view()),
+    path('route/', RouteView.as_view()),
 
 
 ]

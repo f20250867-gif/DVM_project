@@ -7,6 +7,7 @@ from .serializers import UserSerializer
 from rest_framework.permissions import IsAuthenticated
 from .models import Node, Edge, Trip
 from .serializers import NodeSerializer, EdgeSerializer, TripSerializer
+from .utils import shortest_path
 
 class LoginView(APIView):
 
@@ -129,3 +130,17 @@ class TripView(APIView):
 
         return Response(serializer.errors)
     
+#shortest path api
+class RouteView(APIView):
+
+    def get(self, request):
+
+        start = int(request.GET.get("start"))
+        end = int(request.GET.get("end"))
+
+        distance, path = shortest_path(start, end)
+
+        return Response({
+            "distance": distance,
+            "path": path
+        })

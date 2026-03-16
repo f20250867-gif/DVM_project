@@ -1,0 +1,46 @@
+from .models import Edge
+import heapq
+
+
+def build_graph():
+    graph = {}
+
+    edges = Edge.objects.all()
+
+    for edge in edges:
+        start = edge.from_node.id
+        end = edge.to_node.id
+        distance = edge.distance
+
+        if start not in graph:
+            graph[start] = []
+
+        graph[start].append((end, distance))
+
+    return graph
+
+#dijkstra's algorithm to find the shortest path from source to destination
+def shortest_path(start, end):
+
+    graph = build_graph()
+
+    queue = [(0, start, [])]
+    visited = set()
+
+    while queue:
+
+        distance, node, path = heapq.heappop(queue)
+
+        if node in visited:
+            continue
+
+        visited.add(node)
+        path = path + [node]
+
+        if node == end:
+            return distance, path
+
+        for neighbor, weight in graph.get(node, []):
+            heapq.heappush(queue, (distance + weight, neighbor, path))
+
+    return None, []
