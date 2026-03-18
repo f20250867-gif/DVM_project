@@ -3,6 +3,7 @@ from .views import RegisterView, LoginView, MeView
 from .views import NodeView, EdgeView, TripView
 from rest_framework.views import APIView
 from .views import RouteView
+from .views import RideRequestView,CancelTripView, UpdateLocationView
 
 
 urlpatterns = [
@@ -13,6 +14,8 @@ urlpatterns = [
     path('edges/', EdgeView.as_view()), 
     path('trips/', TripView.as_view()),
     path('route/', RouteView.as_view()),
-
+    path("ride-request/", RideRequestView.as_view()),
+    path("trips/cancel/", CancelTripView.as_view()),
+    path("trips/update-location/", UpdateLocationView.as_view()),
 
 ]

@@ -44,3 +44,35 @@ def shortest_path(start, end):
             heapq.heappush(queue, (distance + weight, neighbor, path))
 
     return None, []
+
+
+from .models import Trip
+from .utils import shortest_path
+
+#function to find matching trips for a given pickup and drop node
+def find_matching_trips(pickup_node, drop_node):
+
+    matches = []
+
+    trips = Trip.objects.all()
+
+    for trip in trips:
+
+        distance, path = shortest_path(
+            trip.start_node.id,
+            trip.end_node.id
+        )
+
+        if pickup_node in path and drop_node in path:
+
+            pickup_index = path.index(pickup_node)
+            drop_index = path.index(drop_node)
+
+            if pickup_index < drop_index:
+                matches.append({
+                    "trip_id": trip.id,
+                    "driver": trip.driver.username,
+                    "route": path
+                })
+
+    return matches

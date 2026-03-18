@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import User,Node, Edge, Trip
-
+from .models import RideRequest
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -34,3 +34,13 @@ class TripSerializer(serializers.ModelSerializer):
         model = Trip
         fields = "__all__"
         read_only_fields = ['driver']
+
+
+
+
+class RideRequestSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = RideRequest
+        fields = "__all__"
+        read_only_fields = ['passenger', 'status', 'created_at']

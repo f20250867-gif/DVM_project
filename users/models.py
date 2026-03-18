@@ -32,23 +32,60 @@ class Edge(models.Model):
     to_node = models.ForeignKey(Node, on_delete=models.CASCADE, related_name="to_edges")
 
     distance = models.FloatField()
+
+    class Meta:
+        unique_together = ("from_node", "to_node")
     
 #Trip Model
 class Trip(models.Model):
 
-    driver = models.ForeignKey(User, on_delete=models.CASCADE)
+    driver = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE
+    )
 
-    start_node = models.ForeignKey(Node, on_delete=models.CASCADE, related_name="trip_start")
-    end_node = models.ForeignKey(Node, on_delete=models.CASCADE, related_name="trip_end")
+    start_node = models.ForeignKey(
+        Node,
+        on_delete=models.CASCADE,
+        related_name="trip_start"
+    )
+
+    end_node = models.ForeignKey(
+        Node,
+        on_delete=models.CASCADE,
+        related_name="trip_end"
+    )
+
+    current_node = models.ForeignKey(
+        Node,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="trip_current"
+    )
+
+    max_passengers = models.IntegerField()
 
     available_seats = models.IntegerField()
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.driver} {self.start_node}->{self.end_node}"
     
 #Ride Request Model
 class RideRequest(models.Model):
 
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("matched", "Matched"),
+        ("completed", "Completed"),
+    ]
+
     passenger = models.ForeignKey(
         User,
-        on_delete=models.CASCADE
+        on_delete=models.CASCADE,
+        related_name="ride_requests"
     )
 
     pickup_node = models.ForeignKey(
@@ -65,10 +102,11 @@ class RideRequest(models.Model):
 
     status = models.CharField(
         max_length=20,
+        choices=STATUS_CHOICES,
         default="pending"
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"{self.passenger} request {self.pickup_node} → {self.drop_node}"
+        return f"{self.passenger} {self.pickup_node}->{self.drop_node}"
