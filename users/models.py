@@ -25,6 +25,9 @@ class Node(models.Model):
     latitude = models.FloatField()
     longitude = models.FloatField()
 
+    def __str__(self):
+        return self.name
+
 #Edge Model
 class Edge(models.Model):
 
@@ -35,6 +38,9 @@ class Edge(models.Model):
 
     class Meta:
         unique_together = ("from_node", "to_node")
+
+    def __str__(self):
+        return f"{self.from_node} -> {self.to_node} ({self.distance} km)"
     
 #Trip Model
 class Trip(models.Model):
@@ -63,6 +69,8 @@ class Trip(models.Model):
         blank=True,
         related_name="trip_current"
     )
+    route = models.JSONField(null=True, blank=True)#storing the route
+    visited_nodes = models.JSONField(default=list, blank=True)#to keep track of visited nodes during the trip
 
     max_passengers = models.IntegerField()
 
@@ -110,3 +118,46 @@ class RideRequest(models.Model):
 
     def __str__(self):
         return f"{self.passenger} {self.pickup_node}->{self.drop_node}"
+
+
+
+class RideOffer(models.Model):
+    STATUS_CHOICES = [
+        ("pending", "Pending"),     # Driver offered, waiting for passenger
+        ("accepted", "Accepted"),   # Passenger accepted the offer
+        ("rejected", "Rejected"),   # Passenger declined or cancelled
+    ]
+
+    ride_request = models.ForeignKey(RideRequest, on_delete=models.CASCADE, related_name="offers")
+    trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name="trip_offers")
+    
+    proposed_fare = models.FloatField(default=0.0)
+    detour_nodes = models.IntegerField(default=0)
+    
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        # A driver can only make one offer per request
+        unique_together = ("ride_request", "trip")
+
+    def __str__(self):
+        return f"Offer by {self.trip.driver.username} for Request {self.ride_request.id}"
+    
+class SystemSettings(models.Model):
+    is_carpool_active = models.BooleanField(
+        default=True, 
+        help_text="Toggle to suspend or re-enable the carpooling service globally."
+    )
+
+    class Meta:
+        verbose_name_plural = "System Settings"
+
+    def save(self, *args, **kwargs):
+        if not self.pk and SystemSettings.objects.exists():
+            return
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        status = "Active" if self.is_carpool_active else "Suspended"
+        return f"Carpool Service Status: {status}"
