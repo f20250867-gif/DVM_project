@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My Ride Offers</title>
+</head>
+<body style="font-family: Arial, sans-serif; margin: 40px;">
+
+    <h1>Searching for Drivers...</h1>
+    <p><strong>Route:</strong> {{ ride_request.pickup_node.name }} &rarr; {{ ride_request.drop_node.name }}</p>
+
+    <form action="/api/passenger/request/{{ ride_request.id }}/cancel/" method="POST" style="margin-bottom: 30px;">
+        {% csrf_token %}
+        <button type="submit" style="background-color: #dc3545; color: white; padding: 8px 12px; border: none; cursor: pointer;">
+            Cancel Ride Request
+        </button>
+    </form>
+
+    <hr>
+
+    <h3>Offers from Drivers</h3>
+    
+    <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+        {% for offer in offers %}
+            <div style="border: 1px solid #007bff; padding: 15px; width: 250px; border-radius: 5px;">
+                <h4 style="margin-top: 0; color: #007bff;">Driver: {{ offer.trip.driver.username }}</h4>
+                <p><strong>Fare:</strong> ${{ offer.proposed_fare }}</p>
+                <p><strong>Detour Added:</strong> {{ offer.detour_nodes }} nodes</p>
+                <p><strong>Seats Left in Car:</strong> {{ offer.trip.available_seats }}</p>
+                
+                <form action="/api/passenger/offer/{{ offer.id }}/accept/" method="POST">
+                    {% csrf_token %}
+                    <button type="submit" style="background-color: #007bff; color: white; padding: 8px; width: 100%; border: none; cursor: pointer;">
+                        Accept Offer
+                    </button>
+                </form>
+            </div>
+        {% empty %}
+            <p style="color: #666;">Waiting for drivers to send offers. Refresh the page to check again.</p>
+        {% endfor %}
+    </div>
+
+</body>
+</html>

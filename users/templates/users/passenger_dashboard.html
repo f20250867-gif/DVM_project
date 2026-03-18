@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Passenger Dashboard</title>
+</head>
+<body style="font-family: Arial, sans-serif; margin: 40px;">
+
+    <h1>Book a Carpool</h1>
+    
+    <div style="border: 1px solid #ccc; padding: 20px; max-width: 400px;">
+        <h3>Where are you going?</h3>
+        
+        <form action="" method="POST">
+            {% csrf_token %}
+            <p>
+                <label>Pickup Location:</label><br>
+                <select name="pickup_node" required style="width: 100%; padding: 5px;">
+                    <option value="" disabled selected>Select a starting point</option>
+                    {% for node in nodes %}
+                        <option value="{{ node.id }}">{{ node.name }}</option>
+                    {% endfor %}
+                </select>
+            </p>
+            
+            <p>
+                <label>Drop-off Location:</label><br>
+                <select name="drop_node" required style="width: 100%; padding: 5px;">
+                    <option value="" disabled selected>Select a destination</option>
+                    {% for node in nodes %}
+                        <option value="{{ node.id }}">{{ node.name }}</option>
+                    {% endfor %}
+                </select>
+            </p>
+            
+            <button type="submit" style="background-color: #28a745; color: white; padding: 10px 15px; border: none; cursor: pointer; width: 100%;">
+                Find a Ride
+            </button>
+        </form>
+    </div>
+
+</body>
+</html>
