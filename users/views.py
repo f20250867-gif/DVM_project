@@ -1,4 +1,4 @@
-from django.contrib.auth import authenticate
+from django.contrib.auth import authenticate, get_user_model
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -18,7 +18,11 @@ from .utils import get_remaining_route, is_request_matching_trip
 from .models import RideOffer, Node
 from .permissions import IsServiceActive
 
+def home_page(request):
+    return render(request, 'users/home.html')
 
+def register_page_ui(request):
+    return render(request, 'users/register.html')
 
 class LoginView(APIView):
 
@@ -37,23 +41,35 @@ class LoginView(APIView):
         return Response({
             "refresh": str(refresh),
             "access": str(refresh.access_token),
+            "role": user.role
         })
 
 
-class RegisterView(APIView):
+User = get_user_model()
 
-    def post(self, request):
-        serializer = UserSerializer(data=request.data)
-        if serializer.is_valid():
-            user = serializer.save()
-            refresh = RefreshToken.for_user(user)
-            return Response({
-                "user": serializer.data,
-                "refresh": str(refresh),
-                "access": str(refresh.access_token),
-            }, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+def register_user(request):
 
+    if request.method == "POST":
+
+        username = request.POST.get("username")
+        password = request.POST.get("password")
+        role = request.POST.get("role")
+
+        user = User.objects.create_user(
+            username=username,
+            password=password
+        )
+
+        user.role = role
+        user.save()
+
+        #redirection
+        if role == "driver":
+            return redirect("/api/driver/home/")
+        else:
+            return redirect("/api/passenger/dashboard/")
+
+    return redirect("/api/signup/")
 class MeView(APIView):
 
     permission_classes = [IsAuthenticated]
@@ -506,3 +522,84 @@ def passenger_accept_offer(request, offer_id):
             RideOffer.objects.filter(ride_request=req, status='pending').exclude(id=offer.id).update(status='rejected')
 
     return redirect('passenger-dashboard')
+
+
+@login_required
+def driver_home_ssr(request):
+
+    user = request.user
+
+    if user.role != "driver":
+        return redirect("/api/passenger/dashboard/")
+
+    # ✅ HANDLE FORM SUBMISSION
+    if request.method == "POST":
+
+        start = int(request.POST.get("start_node"))
+        end = int(request.POST.get("end_node"))
+        seats = int(request.POST.get("available_seats"))
+        max_passenger = int(request.POST.get("max_passengers"))
+
+        from .utils import shortest_path
+
+        distance, path = shortest_path(start, end)
+
+        trip = Trip.objects.create(
+            driver=user,
+            start_node_id=start,
+            end_node_id=end,
+            route=path,
+            available_seats=seats,
+            max_passengers=max_passenger,
+        )
+
+        return redirect(f"/api/trips/dashboard/{trip.id}/")
+
+    # ✅ HANDLE PAGE LOAD
+    nodes = Node.objects.all()
+    trips = Trip.objects.filter(driver=user)
+
+    trip_data = []
+
+    nodes = Node.objects.all()
+    trips = Trip.objects.filter(driver=user)
+
+    trip_data = []
+
+    for trip in trips:
+
+        has_requests = RideRequest.objects.filter(
+            pickup_node__in=trip.route,
+            drop_node__in=trip.route,
+            status="pending"
+        ).exists()
+
+        trip_data.append({
+            "trip": trip,
+            "has_requests": has_requests
+        })
+
+    return render(request, "users/driver_home.html", {
+        "nodes": nodes,
+        "trip_data": trip_data
+    })
+
+
+
+@login_required
+def role_redirect_view(request):
+    user = request.user
+#saving choice to the database
+    if request.method == 'POST':
+        selected_role = request.POST.get('role')
+        if selected_role in ['driver', 'passenger']:
+            user.role = selected_role
+            user.save()
+            # After saving, let the logic below redirect them properly
+
+    if user.role == 'driver':
+        return redirect('driver-home')
+    elif user.role == 'passenger':
+        return redirect('passenger-dashboard')
+        
+    return render(request, 'users/choose_role.html')

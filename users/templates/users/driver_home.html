@@ -1,0 +1,48 @@
+<h2>Create Trip</h2>
+
+<form method="POST">
+    {% csrf_token %}
+
+    <label>Start Node:</label>
+    <select name="start_node">
+        {% for node in nodes %}
+            <option value="{{ node.id }}">{{ node.name }}</option>
+        {% endfor %}
+    </select>
+
+    <label>End Node:</label>
+    <select name="end_node">
+        {% for node in nodes %}
+            <option value="{{ node.id }}">{{ node.name }}</option>
+        {% endfor %}
+    </select>
+
+    <label>Seats:</label>
+    <input type="number" name="available_seats" required>
+    <label>Max Passengers:</label>
+    <input type="number" name="max_passengers" required>
+
+    <button type="submit">Publish Trip</button>
+</form>
+
+<hr>
+
+<h2>Your Trips</h2>
+
+{% for item in trip_data %}
+    <div style="border:1px solid #ccc; padding:10px; margin:10px;">
+
+        <p>
+            Trip: {{ item.trip.start_node }} → {{ item.trip.end_node }}
+        </p>
+
+        {% if item.has_requests %}
+            <a href="/api/trips/dashboard/{{ item.trip.id }}/">
+                <button>Trip Requests</button>
+            </a>
+        {% else %}
+            <p>No requests available</p>
+        {% endif %}
+
+    </div>
+{% endfor %}

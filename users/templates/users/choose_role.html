@@ -1,0 +1,25 @@
+{% load socialaccount%}
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Choose Your Role</title>
+</head>
+<body style="font-family: Arial, sans-serif; margin: 40px; text-align: center; background-color: #f8f9fa;">
+    <div style="margin: 0 auto; max-width: 300px; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+        <form action="/api/choose-role/" method="POST">
+            {% csrf_token %}
+            
+            <select name="role" required style="width: 100%; padding: 10px; margin-bottom: 20px; font-size: 16px;">
+                <option value="" disabled selected>Select your role...</option>
+                <option value="passenger">I am a Passenger</option>
+                <option value="driver">I am a Driver</option>
+            </select>
+            
+            <button type="submit" style="background-color: #007bff; color: white; padding: 10px 15px; border: none; cursor: pointer; width: 100%; font-size: 16px; border-radius: 4px;">
+                Continue &rarr;
+            </button>
+        </form>
+    </div>
+
+</body>
+</html>

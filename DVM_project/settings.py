@@ -12,6 +12,8 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 
+import django
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -37,8 +39,9 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.sites',  # Required for django-allauth
     'rest_framework',
-    'users',
+    'users.apps.UsersConfig',
     'allauth',
     'allauth.account',
     'allauth.socialaccount',
@@ -59,6 +62,9 @@ AUTHENTICATION_BACKENDS = [
     'allauth.account.auth_backends.AuthenticationBackend',# Enables django-allauth authentication
     'django.contrib.auth.backends.ModelBackend', # Default Django authentication (for admin and other non-social logins)
 ]
+
+
+
 ROOT_URLCONF = 'DVM_project.urls'
 
 TEMPLATES = [
@@ -85,8 +91,23 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.SessionAuthentication',      
     ),
 }
+SOCIALACCOUNT_PROVIDERS = {
+    'google': {
+        'APP': {
+            'client_id': '57502479870-oop83tubpf2vso3nb5mfi7uiljnltl8n.apps.googleusercontent.com',
+            'secret': '****FPlF',
+        },
+        'SCOPE': [
+            'profile',
+            'email',
+        ],
+        'AUTH_PARAMS': {
+            'access_type': 'online',
+        }
+    }
+}
 
-
+SITE_ID = 1
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
@@ -131,7 +152,13 @@ USE_I18N = True
 
 USE_TZ = True
 
+SOCIALACCOUNT_LOGIN_ON_GET = True
+LOGIN_REDIRECT_URL = '/api/choose-role/'
+LOGOUT_REDIRECT_URL = '/api-auth/login/'
 
+SOCIALACCOUNT_QUERY_EMAIL = True
+ACCOUNT_EMAIL_REQUIRED = True
+ACCOUNT_EMAIL_VERIFICATION = 'none'
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 

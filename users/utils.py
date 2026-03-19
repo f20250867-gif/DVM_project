@@ -122,7 +122,7 @@ def is_request_matching_trip(trip, pickup_node_id, drop_node_id):
     return pickup_idx != -1 and dropoff_idx != -1
 
 def find_matching_trips(pickup_node_id, drop_node_id):
-    """Updated matching logic for passenger requests (Phase 2)."""
+
     matches = []
     # Consider both scheduled and in-progress trips
     active_trips = Trip.objects.filter(available_seats__gt=0)
