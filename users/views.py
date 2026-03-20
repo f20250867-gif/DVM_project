@@ -159,13 +159,13 @@ class TripView(APIView):
             end_id = int(request.data.get("end_node"))
             max_passengers = int(request.data.get("max_passengers"))
 
-            # Generate the route using your utility function
+            #generate route using Dijkstra's algorithm
             distance, path = shortest_path(start_id, end_id)
 
             if not path:
                 return Response({"error": "No valid route found between these nodes."}, status=status.HTTP_400_BAD_REQUEST)
 
-            # Save the trip with dynamic fields populated
+            #saving trips to the database
             trip = serializer.save(
                 driver=request.user,
                 route=path,
@@ -252,7 +252,7 @@ class AcceptRideView(APIView):
 class CancelTripView(APIView):
     permission_classes = [IsAuthenticated]
 
-    # 3. Cancel a trip *before* it begins
+    #cancel trip before departure
     def post(self, request):
         trip_id = request.data.get("trip_id")
         
@@ -265,7 +265,7 @@ class CancelTripView(APIView):
         if trip.driver != request.user:
             return Response({"error": "Only the driver of this trip can cancel it."}, status=status.HTTP_403_FORBIDDEN)
 
-        # CHECK: A trip can only be cancelled if it hasn't started. 
+        #checking : A trip can only be cancelled if it hasn't started. 
         # It hasn't started if the current node is still the start node, and only 1 node is visited.
         if len(trip.visited_nodes) > 1 or trip.current_node_id != trip.start_node_id:
             return Response(
@@ -325,19 +325,19 @@ class UpdateLocationView(APIView):
         if node_id == trip.end_node_id:
             accepted_offers = RideOffer.objects.filter(trip=trip, status='accepted')
             
-            # 1. VERIFICATION: Check if any passenger is broke
+            #Check if any passenger is broke
             insufficient_passengers = []
             for offer in accepted_offers:
                 if offer.ride_request.passenger.wallet_balance < offer.proposed_fare:
                     insufficient_passengers.append(offer.ride_request.passenger.username)
                     
             if insufficient_passengers:
-                # Blocks the completion entirely!
+                #If any passenger can't pay, we should not complete the trip 
                 return Response({
                     "error": f"Trip cannot be completed. The following passengers have insufficient balance: {', '.join(insufficient_passengers)}."
                 }, status=status.HTTP_400_BAD_REQUEST)
                 
-            # 2. SETTLEMENT: Deduct fares and award the driver securely
+            #Deduct fares and award the driver securely
             with transaction.atomic():
                 total_earnings = 0.0
                 
@@ -345,7 +345,7 @@ class UpdateLocationView(APIView):
                     passenger = offer.ride_request.passenger
                     fare = offer.proposed_fare
                     
-                    # Deduct from passenger
+                    #Deduct from passenger
                     passenger.wallet_balance -= fare
                     passenger.save()
                     Transaction.objects.create(
@@ -354,7 +354,7 @@ class UpdateLocationView(APIView):
                     
                     total_earnings += fare
                     
-                # Award the driver
+                #earnings to the driver
                 if total_earnings > 0:
                     trip.driver.wallet_balance += total_earnings
                     trip.driver.save()
@@ -450,7 +450,7 @@ class MakeOfferView(APIView):
         offer = RideOffer.objects.create(
             trip=trip,
             ride_request=ride_request,
-            proposed_fare=fare,   # ✅ LOCKED FARE
+            proposed_fare=fare, 
             status="pending"
         )
 
@@ -459,7 +459,7 @@ class MakeOfferView(APIView):
             "fare": fare
         })
 
-# 2. SSR View for the Driver Dashboard
+#SSR View for the Driver Dashboard
 @login_required
 def driver_dashboard_ssr(request, trip_id):
     trip = get_object_or_404(Trip, id=trip_id, driver=request.user)
@@ -473,7 +473,7 @@ def driver_dashboard_ssr(request, trip_id):
     for req in base_requests:
         if is_request_matching_trip(trip, req.pickup_node.id, req.drop_node.id):
             
-            # Calculate the dynamic fare and detour
+            #calculate the specific detour and fare for this request
             detour, fare = calculate_detour_and_fare(trip, req)
             
             # Attach the numbers to the object so the HTML can display them
@@ -482,7 +482,7 @@ def driver_dashboard_ssr(request, trip_id):
             
             incoming_requests.append(req)
 
-    # 3. Categorize the driver's offers
+    #Categorize the driver's offers
     pending_offers = RideOffer.objects.filter(trip=trip, status="pending")
     confirmed_carpools = RideOffer.objects.filter(trip=trip, status="accepted")
     past_offers = RideOffer.objects.filter(trip=trip, status="rejected")
@@ -508,24 +508,24 @@ class AcceptOfferView(APIView):
 
         trip = offer.trip
 
-        # 2. Check if the driver's car is full
+        #Check if the driver's car is full
         if trip.available_seats <= 0:
             return Response({"error": "Sorry, this trip is already full."}, status=400)
 
-        # 3. Accept the offer
+        #Accept the offer
         offer.status = 'accepted'
         offer.save()
 
-        # 4. Mark the passenger's request as matched
+        #Mark the passenger's request as matched
         ride_request = offer.ride_request
         ride_request.status = 'matched'
         ride_request.save()
 
-        # 5. Decrease the available seats in the car
+        #Decrease the available seats in the car
         trip.available_seats -= 1
         trip.save()
 
-        # 6. Auto-reject any OTHER offers from different drivers for this exact request
+        #Auto-reject any OTHER offers from different drivers for this exact request
         RideOffer.objects.filter(
             ride_request=ride_request, 
             status='pending'
@@ -538,12 +538,12 @@ class AcceptOfferView(APIView):
 
 @login_required
 def passenger_dashboard_ssr(request):
-    # 1. If they already have a pending request, redirect them instantly to the offers page
+    #If they already have a pending request, redirect them instantly to the offers page
     active_request = RideRequest.objects.filter(passenger=request.user, status='pending').first()
     if active_request:
         return redirect('passenger-offers', request_id=active_request.id)
 
-    # 2. Handle the form submission to create a new request
+    #Handle the form submission to create a new request
     if request.method == 'POST':
         pickup_id = request.POST.get('pickup_node')
         drop_id = request.POST.get('drop_node')
@@ -559,7 +559,7 @@ def passenger_dashboard_ssr(request):
         # Redirect to the offers page
         return redirect('passenger-offers', request_id=new_req.id)
 
-    # 3. If it's a normal GET request, show the booking form
+    #If it's a normal GET request, show the booking form
     nodes = Node.objects.all()
     return render(request, 'users/passenger_dashboard.html', {'nodes': nodes})
 
@@ -567,7 +567,7 @@ def passenger_dashboard_ssr(request):
 def passenger_offers_ssr(request, request_id):
     ride_request = get_object_or_404(RideRequest, id=request_id, passenger=request.user)
     
-    # Get all pending offers for this specific request
+    #Get all pending offers for this specific request
     offers = RideOffer.objects.filter(ride_request=ride_request, status='pending')
     
     context = {
@@ -590,21 +590,21 @@ def passenger_accept_offer(request, offer_id):
         offer = get_object_or_404(RideOffer, id=offer_id, ride_request__passenger=request.user)
         
         if offer.status == 'pending' and offer.trip.available_seats > 0:
-            # 1. Accept this offer
+            #Accept this offer
             offer.status = 'accepted'
             offer.save()
             
-            # 2. Mark request as matched
+            #Mark request as matched
             req = offer.ride_request
             req.status = 'matched'
             req.save()
             
-            # 3. Reduce car seats
+            #Reduce car seats
             trip = offer.trip
             trip.available_seats -= 1
             trip.save()
             
-            # 4. Reject all other drivers' offer
+            #Reject all other drivers' offer
             RideOffer.objects.filter(ride_request=req, status='pending').exclude(id=offer.id).update(status='rejected')
 
     return redirect('passenger-dashboard')
@@ -618,7 +618,7 @@ def driver_home_ssr(request):
     if user.role != "driver":
         return redirect("/api/passenger/dashboard/")
 
-# Handle new trip creation
+#Handle new trip creation
     if request.method == "POST":
 
         start = int(request.POST.get("start_node"))
@@ -652,7 +652,7 @@ def driver_home_ssr(request):
 
     trip_data = []
 
-    # FILTERING LOGIC 
+    #FILTERING LOGIC 
     all_requests = RideRequest.objects.filter(status="pending")
 
     for trip in trips:
@@ -684,7 +684,7 @@ def role_redirect_view(request):
         if selected_role in ['driver', 'passenger']:
             user.role = selected_role
             user.save()
-            # After saving, let the logic below redirect them properly
+            # After saving the role, redirect to the appropriate dashboard
 
     if user.role == 'driver':
         return redirect('driver-home')
@@ -706,7 +706,7 @@ def send_offer_view(request):
 
     detour, fare = calculate_detour_and_fare(trip, ride_request)
 
-    # create offer
+    #create offer
     RideOffer.objects.create(
         trip=trip,
         ride_request=ride_request,

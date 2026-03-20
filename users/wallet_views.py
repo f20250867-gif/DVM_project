@@ -19,7 +19,7 @@ class WalletTopUpView(APIView):
 
         user = request.user
         
-        # We use transaction.atomic() to ensure both the balance update and the record creation succeed together
+        # Update wallet balance and create transaction record atomically
         with transaction.atomic():
             user.wallet_balance += amount
             user.save()

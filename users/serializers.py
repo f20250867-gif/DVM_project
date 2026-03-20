@@ -32,7 +32,6 @@ class TripSerializer(serializers.ModelSerializer):
     class Meta:
         model = Trip
         fields = "__all__"
-        # We make these read-only because our view handles populating them automatically
         read_only_fields = ['driver', 'route', 'visited_nodes', 'available_seats', 'current_node']
 
 

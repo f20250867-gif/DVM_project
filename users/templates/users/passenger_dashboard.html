@@ -65,7 +65,7 @@
         const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
         const messageBox = document.getElementById('wallet-message');
 
-        // Make the API call to your Django backend
+        // Make the POST request to top up the wallet
         fetch('/api/wallet/topup/', {  
             method: 'POST',
             headers: {

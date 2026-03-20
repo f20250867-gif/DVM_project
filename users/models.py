@@ -1,8 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 
-# Create your models here.
-
 class User(AbstractUser):
     
     ROLE_CHOICES = [
@@ -125,9 +123,9 @@ class RideRequest(models.Model):
 
 class RideOffer(models.Model):
     STATUS_CHOICES = [
-        ("pending", "Pending"),     # Driver offered, waiting for passenger
-        ("accepted", "Accepted"),   # Passenger accepted the offer
-        ("rejected", "Rejected"),   # Passenger declined or cancelled
+        ("pending", "Pending"),     
+        ("accepted", "Accepted"),  
+        ("rejected", "Rejected"),  
     ]
 
     ride_request = models.ForeignKey(RideRequest, on_delete=models.CASCADE, related_name="offers")

@@ -51,7 +51,7 @@ def shortest_path(start, end):
 
 
 def get_remaining_route(trip):
-    """Slices the planned route to return only nodes the driver hasn't passed yet."""
+# Returns the remaining route for a trip based on the driver's current location.
     route = trip.route or []
     visited = trip.visited_nodes or []
     
@@ -66,10 +66,7 @@ def get_remaining_route(trip):
         return route
 
 def get_reachable_nodes(start_id, max_hops=2, reverse_graph=False):
-    """
-    Finds all nodes within a certain number of hops.
-    If reverse_graph=True, it finds nodes that can reach start_id.
-    """
+ # Returns a set of node IDs that are reachable from the start_id within max_hops.
     adj_list = {}
     edges = Edge.objects.all()
     
@@ -94,9 +91,7 @@ def get_reachable_nodes(start_id, max_hops=2, reverse_graph=False):
     return visited
 
 def is_request_matching_trip(trip, pickup_node_id, drop_node_id):
-    """
-    Ensures the request is valid for the driver's CURRENT mid-ride position.
-    """
+ # 1. Check if the trip has available seats
     if trip.available_seats <= 0:
         return False
         
@@ -151,7 +146,7 @@ def calculate_all_fares(trip, new_route, all_requests):
         u = new_route[i]
         v = new_route[i+1]
         
-        # 1. NEW LOGIC: Find the actual distance of this specific hop
+        # 1. Calculate the distance of this hop (u to v)
         # We check both directions just in case your graph edges are undirected
         edge = Edge.objects.filter(from_node_id=u, to_node_id=v).first()
         if not edge:
@@ -206,7 +201,7 @@ def calculate_detour_and_fare(trip, ride_request):
     drop_node_id = ride_request.drop_node.id
     end_node_id = remaining_route[-1]
     
-    # 1. Calculate the distance of the driver's REMAINING route
+    # 1. Calculate the distance of the driver's remaining route
     original_remaining_dist = 0
     for i in range(len(remaining_route) - 1):
         u = remaining_route[i]
