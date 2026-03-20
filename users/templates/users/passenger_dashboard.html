@@ -37,6 +37,71 @@
             </button>
         </form>
     </div>
+    <div class="card mb-4 shadow-sm" style="border: 1px solid #ddd; padding: 20px; border-radius: 10px;">
+    <h3>My Wallet</h3>
+    
+    <h4 class="text-success mt-3">
+        Current Balance: $<span id="wallet-balance">{{ request.user.wallet_balance|floatformat:2 }}</span>
+    </h4>
+
+    <hr>
+
+    <form id="topup-form" class="mt-3">
+        {% csrf_token %}
+        <div class="form-group mb-3">
+            <label for="amount" class="form-label"><strong>Top-up Amount ($):</strong></label>
+            <input type="number" id="amount" class="form-control" min="1" step="0.50" placeholder="Enter amount to add" required style="max-width: 200px;">
+        </div>
+        <button type="submit" class="btn btn-primary">Add Money</button>
+    </form>
+
+    <p id="wallet-message" class="mt-3" style="display: none; font-weight: bold;"></p>
+</div>
+<script>
+    document.getElementById('topup-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const amount = document.getElementById('amount').value;
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+        const messageBox = document.getElementById('wallet-message');
+
+        // Make the API call to your Django backend
+        fetch('/api/wallet/topup/', {  
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
+            },
+            body: JSON.stringify({ amount: amount })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.new_balance !== undefined) {
+                // Update the balance text instantly
+                document.getElementById('wallet-balance').innerText = parseFloat(data.new_balance).toFixed(2);
+                
+                // Show success message
+                messageBox.innerText = data.message;
+                messageBox.style.color = 'green';
+                messageBox.style.display = 'block';
+                
+                document.getElementById('amount').value = ''; 
+                setTimeout(() => { messageBox.style.display = 'none'; }, 3000);
+            } else {
+                
+                messageBox.innerText = data.error || "Something went wrong.";
+                messageBox.style.color = 'red';
+                messageBox.style.display = 'block';
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            messageBox.innerText = "Network error. Failed to top up.";
+            messageBox.style.color = 'red';
+            messageBox.style.display = 'block';
+        });
+    });
+</script>
 
 </body>
 </html>

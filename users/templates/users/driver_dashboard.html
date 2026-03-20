@@ -85,28 +85,28 @@
         </div>
 
     </div>
-<script>
-function sendOffer(event, tripId, requestId) {
-    event.preventDefault();
+    <script>
+        function sendOffer(event, tripId, requestId) {
+            event.preventDefault();
 
-    fetch("/api/make-offer/", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "X-CSRFToken": "{{ csrf_token }}"
-        },
-        body: JSON.stringify({
-            trip_id: tripId,
-            ride_request_id: requestId
-        })
-    })
-    .then(res => res.json())
-    .then(data => {
-        alert("Offer sent! Fare: " + data.fare);
-        location.reload();
-    });
-}
-</script>
+            fetch("/api/make-offer/", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": "{{ csrf_token }}"
+                },
+                body: JSON.stringify({
+                    trip_id: tripId,
+                    ride_request_id: requestId
+                })
+            })
+                .then(res => res.json())
+                .then(data => {
+                    alert("Offer sent! Fare: " + data.fare);
+                    location.reload();
+                });
+        }
+    </script>
 
 
 </body>
