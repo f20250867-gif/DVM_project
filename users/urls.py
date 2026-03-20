@@ -1,5 +1,5 @@
 from django.urls import include, path
-from .views import LoginView, MeView, driver_dashboard_ssr, driver_home_ssr, home_page, passenger_accept_offer, passenger_cancel_request, passenger_accept_offer, passenger_dashboard_ssr, passenger_offers_ssr, register_page_ui, register_user
+from .views import LoginView, MeView, driver_dashboard_ssr, driver_home_ssr, home_page, passenger_accept_offer, passenger_cancel_request, passenger_accept_offer, passenger_dashboard_ssr, passenger_offers_ssr, register_page_ui, register_user, send_offer_view
 from .views import NodeView, EdgeView, TripView
 from rest_framework.views import APIView
 from .views import RouteView
@@ -30,5 +30,6 @@ urlpatterns = [
     path('choose-role/', role_redirect_view, name='choose-role'),
     path('signup/', register_page_ui, name='signup-ui'),
     path('signup/submit/', register_user, name='register-user'),
+    path("send-offer/", send_offer_view, name="send-offer"),
     
 ]

@@ -94,37 +94,30 @@ def get_reachable_nodes(start_id, max_hops=2, reverse_graph=False):
     return visited
 
 def is_request_matching_trip(trip, pickup_node_id, drop_node_id):
-    #Matches request considering only the remaining route and 2-node proximity.
+    """
+    Checks if a passenger's request is strictly along the driver's planned route.
+    """
     if trip.available_seats <= 0:
         return False
         
+    # 1. Get the remaining route of the trip (nodes the driver hasn't passed yet)
     remaining_route = get_remaining_route(trip)
-    
-    # Driver detours FROM route TO pickup (so route_node -> pickup <= 2 hops)
-    valid_pickups = get_reachable_nodes(pickup_node_id, max_hops=2, reverse_graph=True)
-    
-    # Driver detours FROM dropoff TO route (so dropoff -> route_node <= 2 hops)
-    valid_dropoffs = get_reachable_nodes(drop_node_id, max_hops=2, reverse_graph=False)
-    
-    pickup_idx = -1
-    dropoff_idx = -1
-    
-    for i, node_id in enumerate(remaining_route):
-        # Find the earliest valid pickup point on the remaining route
-        if pickup_idx == -1 and node_id in valid_pickups:
-            pickup_idx = i
+    if pickup_node_id in remaining_route and drop_node_id in remaining_route:
+
+        pickup_index = remaining_route.index(pickup_node_id)
+        drop_index = remaining_route.index(drop_node_id)
+        
+  
+        if pickup_index < drop_index:
+            return True
             
-        # Find a valid dropoff point that occurs AFTER the pickup point
-        if pickup_idx != -1 and node_id in valid_dropoffs:
-            dropoff_idx = i
-            break
-            
+    return False
     return pickup_idx != -1 and dropoff_idx != -1
 
 def find_matching_trips(pickup_node_id, drop_node_id):
 
     matches = []
-    # Consider both scheduled and in-progress trips
+    # Considering both scheduled and in-progress trips
     active_trips = Trip.objects.filter(available_seats__gt=0)
     
     for trip in active_trips:
@@ -199,35 +192,19 @@ def calculate_all_fares(trip, new_route, all_requests):
 
 def calculate_detour_and_fare(trip, ride_request):
     """
-    Calculates the detour and the dynamic fare based on all passengers.
+    Calculates the fare for a passenger who is strictly on the driver's route.
+    Detour is always 0 because they are directly on the path.
     """
     remaining_route = get_remaining_route(trip)
     
     if not remaining_route:
         return 0, 0
         
-    current_node_id = remaining_route[0]
-    pickup_node_id = ride_request.pickup_node.id
-    drop_node_id = ride_request.drop_node.id
-    end_node_id = remaining_route[-1]
+    # Since we strictly enforce they are on the route, detour is 0
+    detour = 0
     
-    # 1. Calculate original remaining route length
-    original_remaining_hops = len(remaining_route) - 1
-    
-    # 2. Calculate the new route segments using Dijkstra's
-    _, path_to_pickup = shortest_path(current_node_id, pickup_node_id)
-    _, path_passenger = shortest_path(pickup_node_id, drop_node_id)
-    _, path_to_end = shortest_path(drop_node_id, end_node_id)
-    
-    if not path_to_pickup or not path_passenger or not path_to_end:
-        return float('inf'), 0
-        
-    # 3. Calculate Detour
-    new_remaining_hops = (len(path_to_pickup) - 1) + (len(path_passenger) - 1) + (len(path_to_end) - 1)
-    detour = new_remaining_hops - original_remaining_hops
-    
-    # Construct the full new proposed route (removing overlapping nodes)
-    new_route = path_to_pickup[:-1] + path_passenger[:-1] + path_to_end
+    # The route doesn't change, we just use the driver's remaining route
+    new_route = remaining_route
     
     accepted_offers = RideOffer.objects.filter(trip=trip, status="accepted")
     confirmed_requests = [offer.ride_request for offer in accepted_offers]
@@ -235,10 +212,10 @@ def calculate_detour_and_fare(trip, ride_request):
     # Combine existing passengers with the new requesting passenger
     all_requests = confirmed_requests + [ride_request]
     
-    # Calculate the dynamic fares for EVERYONE
+    # Calculate the dynamic fares for EVERYONE sharing this exact route segment
     all_fares = calculate_all_fares(trip, new_route, all_requests)
     
-    # Extract just the fare for the NEW requesting passenger to display to the driver
-    passenger_fare = all_fares[ride_request.id]
+    # Extract just the fare for the NEW requesting passenger to display
+    passenger_fare = all_fares.get(ride_request.id, 0.0)
     
     return detour, round(passenger_fare, 2)

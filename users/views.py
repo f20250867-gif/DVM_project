@@ -18,6 +18,7 @@ from .utils import get_remaining_route, is_request_matching_trip
 from .models import RideOffer, Node
 from .permissions import IsServiceActive
 
+
 def home_page(request):
     return render(request, 'users/home.html')
 
@@ -135,41 +136,49 @@ class EdgeView(APIView):
     
 #trip api
 class TripView(APIView):
-    permission_classes = [IsAuthenticated, IsServiceActive]
+    permission_classes = [IsAuthenticated]
 
+    # 1. View all their active and past trips
     def get(self, request):
-
-        trips = Trip.objects.all()
+        if request.user.role != 'driver':
+            return Response({"error": "Only drivers can view their trips."}, status=status.HTTP_403_FORBIDDEN)
+        
+        # Filter trips by the currently logged-in driver, order by newest first
+        trips = Trip.objects.filter(driver=request.user).order_by('-created_at')
         serializer = TripSerializer(trips, many=True)
-
         return Response(serializer.data)
 
-
+    # 2. Publish a new trip and generate route
     def post(self, request):
+        if request.user.role != 'driver':
+            return Response({"error": "Only drivers can publish trips."}, status=status.HTTP_403_FORBIDDEN)
 
         serializer = TripSerializer(data=request.data)
 
         if serializer.is_valid():
+            # Extract data from request
+            start_id = int(request.data.get("start_node"))
+            end_id = int(request.data.get("end_node"))
+            max_passengers = int(request.data.get("max_passengers"))
 
-            start = int(request.data.get("start_node"))
-            end = int(request.data.get("end_node"))
-
-            distance, path = shortest_path(start, end)
+            # Generate the route using your utility function
+            distance, path = shortest_path(start_id, end_id)
 
             if not path:
-                return Response({"error": "No route found"})
+                return Response({"error": "No valid route found between these nodes."}, status=status.HTTP_400_BAD_REQUEST)
 
+            # Save the trip with dynamic fields populated
             trip = serializer.save(
                 driver=request.user,
                 route=path,
-                available_seats=request.data.get("max_passengers"),
-                visited_nodes=[path[0]],#first node is the starting point
-                current_node_id=path[0]#initialize current node to starting point
+                available_seats=max_passengers, # Initially, available seats = max passengers
+                visited_nodes=[path[0]],        # Mark the start node as visited
+                current_node_id=path[0]         # Set current node to the start node
             )
             
-            return Response(serializer.data)
+            return Response(TripSerializer(trip).data, status=status.HTTP_201_CREATED)
 
-        return Response(serializer.errors)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 #shortest path api
 class RouteView(APIView):
@@ -243,59 +252,79 @@ class AcceptRideView(APIView):
         })
 #cancel trip api
 class CancelTripView(APIView):
-
     permission_classes = [IsAuthenticated]
 
+    # 3. Cancel a trip *before* it begins
     def post(self, request):
-
         trip_id = request.data.get("trip_id")
-        trip = Trip.objects.get(id=trip_id)
+        
+        try:
+            trip = Trip.objects.get(id=trip_id)
+        except Trip.DoesNotExist:
+            return Response({"error": "Trip not found"}, status=status.HTTP_404_NOT_FOUND)
 
+        # Ensure the user requesting cancellation is the driver
         if trip.driver != request.user:
-            return Response({"error": "Only driver can cancel trip"})
-        trip.delete()
+            return Response({"error": "Only the driver of this trip can cancel it."}, status=status.HTTP_403_FORBIDDEN)
 
-        return Response({"message": "Trip cancelled successfully"})
+        # CHECK: A trip can only be cancelled if it hasn't started. 
+        # It hasn't started if the current node is still the start node, and only 1 node is visited.
+        if len(trip.visited_nodes) > 1 or trip.current_node_id != trip.start_node_id:
+            return Response(
+                {"error": "Cannot cancel a trip that has already started. You are currently en route."}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        trip.delete()
+        return Response({"message": "Trip cancelled successfully before departure."}, status=status.HTTP_200_OK)
 
 #update location api
 class UpdateLocationView(APIView):
-
     permission_classes = [IsAuthenticated]
 
+    # 4. Update current node as they progress
     def post(self, request):
-
         trip_id = request.data.get("trip_id")
-        node_id = request.data.get("node_id")
+        node_id = int(request.data.get("node_id"))
         
-        trip = Trip.objects.get(id=trip_id)
+        try:
+            trip = Trip.objects.get(id=trip_id)
+        except Trip.DoesNotExist:
+            return Response({"error": "Trip not found"}, status=status.HTTP_404_NOT_FOUND)
 
         if trip.driver != request.user:
-            return Response({"error": "Not allowed"})
+            return Response({"error": "Not allowed. You are not the driver of this trip."}, status=status.HTTP_403_FORBIDDEN)
         
         route = trip.route or []
         visited = trip.visited_nodes or []
 
         if node_id not in route:
-            return Response({"error": "Invalid node for this trip"})
+            return Response({"error": "Invalid node. This node is not on your scheduled route."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Find where we are and where we are trying to go in the route array
         last_index = route.index(visited[-1])
         new_index = route.index(node_id)
 
         if new_index <= last_index:
-            return Response({"error": "Cannot revisit or go backwards"})
+            return Response({"error": "Cannot revisit a previous node or stay at the same node."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Update the visited nodes array to include all nodes up to the new node
         new_visited = route[:new_index + 1]
 
         trip.visited_nodes = new_visited
         trip.current_node_id = node_id
         trip.save()
 
+        #Check if the trip is completed
+        message = "Location updated successfully."
+        if node_id == trip.end_node_id:
+            message = "You have reached your destination. Trip completed!"
+
         return Response({
-            "message": "Location updated",
+            "message": message,
             "current_node": node_id,
             "visited_nodes": new_visited
-        })
-    
+        }, status=status.HTTP_200_OK)
 
 
 class DriverRequestsAPIView(APIView):
@@ -348,62 +377,61 @@ class MakeOfferView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        ride_request_id = request.data.get("ride_request_id")
+
         trip_id = request.data.get("trip_id")
+        ride_request_id = request.data.get("ride_request_id")
 
-        # 1. Fetch the objects first
-        ride_request = get_object_or_404(RideRequest, id=ride_request_id)
-        trip = get_object_or_404(Trip, id=trip_id, driver=request.user)
+        trip = Trip.objects.get(id=trip_id)
+        ride_request = RideRequest.objects.get(id=ride_request_id)
 
-        if trip.available_seats <= 0:
-            return Response({"error": "Trip is full"}, status=400)
-            
-        if RideOffer.objects.filter(ride_request=ride_request, trip=trip).exists():
-            return Response({"error": "You already made an offer for this request."}, status=400)
+        # 🔥 IMPORTANT: calculate fare here
+        from .utils import calculate_detour_and_fare
 
-        # Calculate the detour and fare using the same logic as the dashboard
-        detour_val, fare_val = calculate_detour_and_fare(trip, ride_request)
+        detour, fare = calculate_detour_and_fare(trip, ride_request)
 
-        #Create the offer with the dynamically generated numbers
         offer = RideOffer.objects.create(
-            ride_request=ride_request,
             trip=trip,
-            proposed_fare=fare_val,       
-            detour_nodes=detour_val       
+            ride_request=ride_request,
+            proposed_fare=fare,   # ✅ LOCKED FARE
+            status="pending"
         )
 
-        return Response({"message": "Offer sent to passenger successfully!", "offer_id": offer.id})
-
+        return Response({
+            "message": "Offer created",
+            "fare": fare
+        })
 
 # 2. SSR View for the Driver Dashboard
 @login_required
 def driver_dashboard_ssr(request, trip_id):
     trip = get_object_or_404(Trip, id=trip_id, driver=request.user)
     
-    # 1. Fetch raw incoming requests
+
     base_requests = RideRequest.objects.filter(status="pending").exclude(offers__trip=trip)
     
     incoming_requests = []
     
-    # 2. Loop through them and run your math formula!
+        # For each request, check if it matches the trip and calculate detour/fare
     for req in base_requests:
-        # Calculate the dynamic fare and detour
-        detour, fare = calculate_detour_and_fare(trip, req)
-        
-        # Attach the numbers to the object so the HTML can display them
-        req.detour = detour
-        req.fare = fare
-        
-        incoming_requests.append(req)
+        if is_request_matching_trip(trip, req.pickup_node.id, req.drop_node.id):
+            
+            # Calculate the dynamic fare and detour
+            detour, fare = calculate_detour_and_fare(trip, req)
+            
+            # Attach the numbers to the object so the HTML can display them
+            req.detour = detour
+            req.fare = fare
+            
+            incoming_requests.append(req)
 
-    # Categorize the driver's offers
+    # 3. Categorize the driver's offers
     pending_offers = RideOffer.objects.filter(trip=trip, status="pending")
     confirmed_carpools = RideOffer.objects.filter(trip=trip, status="accepted")
     past_offers = RideOffer.objects.filter(trip=trip, status="rejected")
 
     context = {
         "trip": trip,
-        "incoming_requests": incoming_requests, # Now contains the calculated fares!
+        "incoming_requests": incoming_requests, # Now safely filtered!
         "pending_offers": pending_offers,
         "confirmed_carpools": confirmed_carpools,
         "past_offers": past_offers
@@ -540,8 +568,6 @@ def driver_home_ssr(request):
         seats = int(request.POST.get("available_seats"))
         max_passenger = int(request.POST.get("max_passengers"))
 
-        from .utils import shortest_path
-
         distance, path = shortest_path(start, end)
 
         trip = Trip.objects.create(
@@ -555,7 +581,7 @@ def driver_home_ssr(request):
 
         return redirect(f"/api/trips/dashboard/{trip.id}/")
 
-    # ✅ HANDLE PAGE LOAD
+ 
     nodes = Node.objects.all()
     trips = Trip.objects.filter(driver=user)
 
@@ -565,14 +591,18 @@ def driver_home_ssr(request):
     trips = Trip.objects.filter(driver=user)
 
     trip_data = []
+
+    #UPDATED FILTERING LOGIC 
+    all_requests = RideRequest.objects.filter(status="pending")
 
     for trip in trips:
 
-        has_requests = RideRequest.objects.filter(
-            pickup_node__in=trip.route,
-            drop_node__in=trip.route,
-            status="pending"
-        ).exists()
+        has_requests = False
+
+        for req in all_requests:
+            if is_request_matching_trip(trip, req.pickup_node.id, req.drop_node.id):
+                has_requests = True
+                break
 
         trip_data.append({
             "trip": trip,
@@ -583,7 +613,6 @@ def driver_home_ssr(request):
         "nodes": nodes,
         "trip_data": trip_data
     })
-
 
 
 @login_required
@@ -603,3 +632,27 @@ def role_redirect_view(request):
         return redirect('passenger-dashboard')
         
     return render(request, 'users/choose_role.html')
+
+from django.views.decorators.http import require_POST
+
+@require_POST
+def send_offer_view(request):
+
+    trip_id = request.POST.get("trip_id")
+    ride_request_id = request.POST.get("ride_request_id")
+
+    trip = Trip.objects.get(id=trip_id)
+    ride_request = RideRequest.objects.get(id=ride_request_id)
+
+    detour, fare = calculate_detour_and_fare(trip, ride_request)
+
+    # create offer
+    RideOffer.objects.create(
+        trip=trip,
+        ride_request=ride_request,
+        proposed_fare=fare,      
+        detour_nodes=detour,    
+        status="pending"
+    )
+
+    return redirect(f"/api/trips/dashboard/{trip.id}/")
