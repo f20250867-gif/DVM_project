@@ -1,4 +1,6 @@
 from django.urls import include, path
+
+from users.wallet_views import WalletTopUpView
 from .views import LoginView, MeView, driver_dashboard_ssr, driver_home_ssr, home_page, passenger_accept_offer, passenger_cancel_request, passenger_accept_offer, passenger_dashboard_ssr, passenger_offers_ssr, register_page_ui, register_user, send_offer_view
 from .views import NodeView, EdgeView, TripView
 from rest_framework.views import APIView
@@ -31,5 +33,6 @@ urlpatterns = [
     path('signup/', register_page_ui, name='signup-ui'),
     path('signup/submit/', register_user, name='register-user'),
     path("send-offer/", send_offer_view, name="send-offer"),
+    path('wallet/topup/', WalletTopUpView.as_view(), name='wallet-topup'),
     
 ]

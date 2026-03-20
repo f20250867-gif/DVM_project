@@ -5,17 +5,15 @@ from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
 from .serializers import UserSerializer
 from rest_framework.permissions import IsAuthenticated
-from .models import Node, Edge, Trip
+from .models import Node, Edge, Trip,RideOffer, RideRequest, Transaction
 from .serializers import NodeSerializer, EdgeSerializer, TripSerializer
 from .utils import calculate_detour_and_fare, shortest_path
-from .models import RideRequest
 from .serializers import RideRequestSerializer
 from .utils import find_matching_trips
 from django.db import transaction
 from django.shortcuts import get_object_or_404, render, redirect
 from django.contrib.auth.decorators import login_required
 from .utils import get_remaining_route, is_request_matching_trip
-from .models import RideOffer, Node
 from .permissions import IsServiceActive
 
 
@@ -282,10 +280,13 @@ class CancelTripView(APIView):
 class UpdateLocationView(APIView):
     permission_classes = [IsAuthenticated]
 
-    # 4. Update current node as they progress
     def post(self, request):
         trip_id = request.data.get("trip_id")
-        node_id = int(request.data.get("node_id"))
+        
+        try:
+            node_id = int(request.data.get("node_id"))
+        except (TypeError, ValueError):
+            return Response({"error": "Invalid node_id format."}, status=status.HTTP_400_BAD_REQUEST)
         
         try:
             trip = Trip.objects.get(id=trip_id)
@@ -293,39 +294,89 @@ class UpdateLocationView(APIView):
             return Response({"error": "Trip not found"}, status=status.HTTP_404_NOT_FOUND)
 
         if trip.driver != request.user:
-            return Response({"error": "Not allowed. You are not the driver of this trip."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"error": "Not allowed. You are not the driver."}, status=status.HTTP_403_FORBIDDEN)
         
         route = trip.route or []
         visited = trip.visited_nodes or []
 
         if node_id not in route:
-            return Response({"error": "Invalid node. This node is not on your scheduled route."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Invalid node. This node is not on your planned route."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Find where we are and where we are trying to go in the route array
-        last_index = route.index(visited[-1])
+        # Fallback just in case visited is somehow empty
+        last_index = route.index(visited[-1]) if visited else -1
         new_index = route.index(node_id)
 
+        
         if new_index <= last_index:
-            return Response({"error": "Cannot revisit a previous node or stay at the same node."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Cannot revisit a previous node or go backwards."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Update the visited nodes array to include all nodes up to the new node
+        # Update visited nodes by slicing the route array up to the new node
         new_visited = route[:new_index + 1]
 
         trip.visited_nodes = new_visited
         trip.current_node_id = node_id
         trip.save()
-
-        #Check if the trip is completed
+        
+        # Check if they reached the end
         message = "Location updated successfully."
         if node_id == trip.end_node_id:
-            message = "You have reached your destination. Trip completed!"
+            message = "Destination reached! Trip is now complete."
+
+        if node_id == trip.end_node_id:
+            accepted_offers = RideOffer.objects.filter(trip=trip, status='accepted')
+            
+            # 1. VERIFICATION: Check if any passenger is broke
+            insufficient_passengers = []
+            for offer in accepted_offers:
+                if offer.ride_request.passenger.wallet_balance < offer.proposed_fare:
+                    insufficient_passengers.append(offer.ride_request.passenger.username)
+                    
+            if insufficient_passengers:
+                # Blocks the completion entirely!
+                return Response({
+                    "error": f"Trip cannot be completed. The following passengers have insufficient balance: {', '.join(insufficient_passengers)}."
+                }, status=status.HTTP_400_BAD_REQUEST)
+                
+            # 2. SETTLEMENT: Deduct fares and award the driver securely
+            with transaction.atomic():
+                total_earnings = 0.0
+                
+                for offer in accepted_offers:
+                    passenger = offer.ride_request.passenger
+                    fare = offer.proposed_fare
+                    
+                    # Deduct from passenger
+                    passenger.wallet_balance -= fare
+                    passenger.save()
+                    Transaction.objects.create(
+                        user=passenger, amount=fare, transaction_type='deduction', trip=trip
+                    )
+                    
+                    total_earnings += fare
+                    
+                # Award the driver
+                if total_earnings > 0:
+                    trip.driver.wallet_balance += total_earnings
+                    trip.driver.save()
+                    Transaction.objects.create(
+                        user=trip.driver, amount=total_earnings, transaction_type='earning', trip=trip
+                    )
+                    
+            message = "Destination reached! Trip complete and fares have been settled."
+        else:
+            message = "Location updated successfully."
+
+        # Proceed to update the actual node locations if payments passed (or weren't needed yet)
+        new_visited = route[:new_index + 1]
+        trip.visited_nodes = new_visited
+        trip.current_node_id = node_id
+        trip.save()
 
         return Response({
             "message": message,
             "current_node": node_id,
             "visited_nodes": new_visited
         }, status=status.HTTP_200_OK)
-
 
 class DriverRequestsAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -349,27 +400,35 @@ class DriverRequestsAPIView(APIView):
                 
         return Response(valid_requests_data)
 
+
 @login_required
 def driver_dashboard_ssr(request, trip_id):
     trip = get_object_or_404(Trip, id=trip_id, driver=request.user)
-    pending_requests = RideRequest.objects.filter(status="pending")
     
-    valid_requests = []
-    for req in pending_requests:
-        if is_request_matching_trip(trip, req.pickup_node_id, req.drop_node_id):
-            detour, fare = calculate_detour_and_fare(trip, req)
-            
-            # Dynamically attach the variables to the object so the template can read them
-            req.detour = detour
-            req.fare = fare
-            valid_requests.append(req)
-            
+ 
+    incoming_requests = []
+    if trip.current_node_id != trip.end_node_id:
+        base_requests = RideRequest.objects.filter(status="pending").exclude(offers__trip=trip)
+        
+        for req in base_requests:
+            if is_request_matching_trip(trip, req.pickup_node.id, req.drop_node.id):
+                detour, fare = calculate_detour_and_fare(trip, req)
+                req.detour = detour
+                req.fare = fare
+                incoming_requests.append(req)
+
+    pending_offers = RideOffer.objects.filter(trip=trip, status="pending")
+    confirmed_carpools = RideOffer.objects.filter(trip=trip, status="accepted")
+    past_offers = RideOffer.objects.filter(trip=trip, status="rejected")
+
     context = {
         "trip": trip,
-        "remaining_route": get_remaining_route(trip),
-        "requests": valid_requests
+        "incoming_requests": incoming_requests, 
+        "pending_offers": pending_offers,
+        "confirmed_carpools": confirmed_carpools,
+        "past_offers": past_offers
     }
-    return render(request, "users/templates/users/driver_dashboard.html", context)
+    return render(request, "users/driver_dashboard.html", context)
 
 
 
@@ -384,7 +443,6 @@ class MakeOfferView(APIView):
         trip = Trip.objects.get(id=trip_id)
         ride_request = RideRequest.objects.get(id=ride_request_id)
 
-        # 🔥 IMPORTANT: calculate fare here
         from .utils import calculate_detour_and_fare
 
         detour, fare = calculate_detour_and_fare(trip, ride_request)
@@ -560,7 +618,7 @@ def driver_home_ssr(request):
     if user.role != "driver":
         return redirect("/api/passenger/dashboard/")
 
-    # ✅ HANDLE FORM SUBMISSION
+# Handle new trip creation
     if request.method == "POST":
 
         start = int(request.POST.get("start_node"))
@@ -577,6 +635,8 @@ def driver_home_ssr(request):
             route=path,
             available_seats=seats,
             max_passengers=max_passenger,
+            current_node_id=start,  
+            visited_nodes=[start]   
         )
 
         return redirect(f"/api/trips/dashboard/{trip.id}/")
@@ -592,7 +652,7 @@ def driver_home_ssr(request):
 
     trip_data = []
 
-    #UPDATED FILTERING LOGIC 
+    # FILTERING LOGIC 
     all_requests = RideRequest.objects.filter(status="pending")
 
     for trip in trips:

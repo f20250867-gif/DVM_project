@@ -26,7 +26,10 @@
 </form>
 
 <hr>
-
+    <div class="wallet-card" style="background: white; border: 1px solid #ccc; padding: 15px; border-radius: 8px; margin-bottom: 30px;">
+        <h3>My Earnings</h3>
+        <p>Current Balance: ${{ request.user.wallet_balance }}</p>
+    </div>
 <h2>Your Trips</h2>
 
 {% for item in trip_data %}

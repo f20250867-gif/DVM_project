@@ -16,6 +16,8 @@ class User(AbstractUser):
         default='passenger'
     )
 
+    wallet_balance = models.FloatField(default=0.0)
+
     def __str__(self):
         return self.username
 
@@ -161,3 +163,22 @@ class SystemSettings(models.Model):
     def __str__(self):
         status = "Active" if self.is_carpool_active else "Suspended"
         return f"Carpool Service Status: {status}"
+    
+
+
+class Transaction(models.Model):
+    TRANSACTION_TYPES = [
+        ('topup', 'Top-up'),
+        ('deduction', 'Fare Deduction'),
+        ('earning', 'Driver Earning'),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="transactions")
+    amount = models.FloatField()
+    transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES)
+
+    trip = models.ForeignKey('Trip', on_delete=models.SET_NULL, null=True, blank=True)
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.user.username} | {self.get_transaction_type_display()} | ${self.amount}"

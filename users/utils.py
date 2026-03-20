@@ -1,5 +1,6 @@
 import heapq
 from .models import Edge, Trip, RideOffer
+from django.db.models import F
 
 def build_graph():
     graph = {}
@@ -59,7 +60,6 @@ def get_remaining_route(trip):
         
     last_visited = visited[-1]
     try:
-        # Return the route from the current node onwards
         idx = route.index(last_visited)
         return route[idx:] 
     except ValueError:
@@ -95,30 +95,33 @@ def get_reachable_nodes(start_id, max_hops=2, reverse_graph=False):
 
 def is_request_matching_trip(trip, pickup_node_id, drop_node_id):
     """
-    Checks if a passenger's request is strictly along the driver's planned route.
+    Ensures the request is valid for the driver's CURRENT mid-ride position.
     """
     if trip.available_seats <= 0:
         return False
         
-    # 1. Get the remaining route of the trip (nodes the driver hasn't passed yet)
-    remaining_route = get_remaining_route(trip)
-    if pickup_node_id in remaining_route and drop_node_id in remaining_route:
+    # If the driver has already passed the drop-off point, it's not a match
+    if trip.current_node_id == trip.end_node_id:
+        return False
 
+    remaining_route = get_remaining_route(trip)
+    
+    #   The pickup and drop must both be on the remaining route, and pickup must come before drop
+    if pickup_node_id in remaining_route and drop_node_id in remaining_route:
         pickup_index = remaining_route.index(pickup_node_id)
         drop_index = remaining_route.index(drop_node_id)
         
-  
+        # Ensure the driver reaches the pickup BEFORE the drop-off
         if pickup_index < drop_index:
             return True
             
     return False
-    return pickup_idx != -1 and dropoff_idx != -1
 
 def find_matching_trips(pickup_node_id, drop_node_id):
 
     matches = []
-    # Considering both scheduled and in-progress trips
-    active_trips = Trip.objects.filter(available_seats__gt=0)
+
+    active_trips = Trip.objects.filter(available_seats__gt=0).exclude(current_node_id=F('end_node_id'))
     
     for trip in active_trips:
         if is_request_matching_trip(trip, pickup_node_id, drop_node_id):
@@ -134,6 +137,7 @@ def find_matching_trips(pickup_node_id, drop_node_id):
 
 def calculate_all_fares(trip, new_route, all_requests):
     """
+    Calculates fares for all passengers sharing the route.
     Applies the distance-based fare formula: 
     p = 30 * distance, base = 200
     """
@@ -191,20 +195,40 @@ def calculate_all_fares(trip, new_route, all_requests):
 
 
 def calculate_detour_and_fare(trip, ride_request):
-    """
-    Calculates the fare for a passenger who is strictly on the driver's route.
-    Detour is always 0 because they are directly on the path.
-    """
+
     remaining_route = get_remaining_route(trip)
     
     if not remaining_route:
         return 0, 0
         
-    # Since we strictly enforce they are on the route, detour is 0
-    detour = 0
+    current_node_id = remaining_route[0]
+    pickup_node_id = ride_request.pickup_node.id
+    drop_node_id = ride_request.drop_node.id
+    end_node_id = remaining_route[-1]
     
-    # The route doesn't change, we just use the driver's remaining route
-    new_route = remaining_route
+    # 1. Calculate the distance of the driver's REMAINING route
+    original_remaining_dist = 0
+    for i in range(len(remaining_route) - 1):
+        u = remaining_route[i]
+        v = remaining_route[i+1]
+        edge = Edge.objects.filter(from_node_id=u, to_node_id=v).first() or Edge.objects.filter(from_node_id=v, to_node_id=u).first()
+        original_remaining_dist += (edge.distance if edge else 1.0)
+
+    # 2. Calculate the new distance if they pick up this passenger from their current location
+    dist_to_pickup, path_to_pickup = shortest_path(current_node_id, pickup_node_id)
+    dist_passenger, path_passenger = shortest_path(pickup_node_id, drop_node_id)
+    dist_to_end, path_to_end = shortest_path(drop_node_id, end_node_id)
+    
+    if path_to_pickup is None or path_passenger is None or path_to_end is None:
+        return float('inf'), 0
+        
+    new_remaining_dist = dist_to_pickup + dist_passenger + dist_to_end
+    
+    # 3. Detour = Difference between the new remaining journey and the old remaining journey
+    detour = max(0, new_remaining_dist - original_remaining_dist)
+    
+    # Construct the full new proposed route (removing overlapping nodes)
+    new_route = path_to_pickup[:-1] + path_passenger[:-1] + path_to_end
     
     accepted_offers = RideOffer.objects.filter(trip=trip, status="accepted")
     confirmed_requests = [offer.ride_request for offer in accepted_offers]
@@ -212,10 +236,8 @@ def calculate_detour_and_fare(trip, ride_request):
     # Combine existing passengers with the new requesting passenger
     all_requests = confirmed_requests + [ride_request]
     
-    # Calculate the dynamic fares for EVERYONE sharing this exact route segment
+    # Calculate the dynamic fares for EVERYONE
     all_fares = calculate_all_fares(trip, new_route, all_requests)
-    
-    # Extract just the fare for the NEW requesting passenger to display
     passenger_fare = all_fares.get(ride_request.id, 0.0)
     
-    return detour, round(passenger_fare, 2)
+    return round(detour, 2), round(passenger_fare, 2)
